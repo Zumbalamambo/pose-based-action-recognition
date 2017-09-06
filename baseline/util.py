@@ -4,7 +4,6 @@ import time
 from tqdm import tqdm
 import pandas as pd
 import shutil
-import lr_scheduler
 from random import randint
 import argparse
 
@@ -58,18 +57,19 @@ def save_checkpoint(state, is_best, filename='../save/checkpoint.pth.tar'):
 class JHMDB_rgb_data(Dataset):  
     def __init__(self, dic, root_dir, transform=None):
 
-        self.dic = dic
         self.root_dir = root_dir
         self.transform = transform
+        self.keys= dic.keys()
+        self.values=dic.values()
 
     def __len__(self):
-        return len(self.dic)
+        return len(self.keys)
 
     def __getitem__(self, idx):
         #img_name = os.path.join(self.root_dir, self.landmarks_frame.ix[idx, 0])
-        frame = self.dic.keys()[idx] 
+        frame = self.keys[idx] 
         img = Image.open(self.root_dir + frame)
-        label = self.dic[frame]
+        label = self.values[idx]
         label = int(label)-1
 
         transformed_img = self.transform(img)

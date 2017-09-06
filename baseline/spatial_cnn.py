@@ -31,29 +31,29 @@ parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='man
 
 def main():
 
-    global args
-    args = parser.parse_args()
+    global arg
+    arg = parser.parse_args()
 
     #Prepare DataLoader
     data_loader = Data_Loader(
                         BATCH_SIZE=arg.batch_size,
                         num_workers=4,
-                        data_path=,
-                        dic_path=, 
+                        data_path='/home/ubuntu/data/HMDB/jpegs_256/',
+                        dic_path='/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/', 
                         )
     
     train_loader = data_loader.train()
-    test_loader = data_loader.test()
+    test_loader = data_loader.validate()
 
     spatial_cnn = Spatial_CNN(
-                        nb_epochs=arg.epochs
-                        lr=arg.lr
-                        batch_size=arg.batch_size
-                        resume=arg.resume
-                        start_epoch=arg.start_epoch
-                        evaluate=arg.evaluate
-                        train_loader=train_loader
-                        test_loader=test_loader
+                        nb_epochs=arg.epochs,
+                        lr=arg.lr,
+                        batch_size=arg.batch_size,
+                        resume=arg.resume,
+                        start_epoch=arg.start_epoch,
+                        evaluate=arg.evaluate,
+                        train_loader=train_loader,
+                        test_loader=test_loader,
     )
 
     spatial_cnn.build_model_and_optimizer()
@@ -77,10 +77,10 @@ class Spatial_CNN():
         self.test_loader=test_loader
 
     def build_model_and_optimizer(self):
-        self.model = network.ResNet18(pretrained= true)
+        self.model = resnet18(pretrained= True)
         #Loss function and optimizer
         self.criterion = nn.CrossEntropyLoss().cuda()
-        self.optimizer = torch.optim.SGD(self.model.parameters(), self.LR, momentum=0.9, weight_decay=1e-6)
+        self.optimizer = torch.optim.SGD(self.model.parameters(), self.lr, momentum=0.9, weight_decay=1e-6)
     
     def run(self):
         self.best_prec1=0
@@ -102,9 +102,9 @@ class Spatial_CNN():
             prec1, val_loss = self.validate_1epoch()
 
         for self.epoch in range(self.start_epoch, self.nb_epochs):
-            print('==> Epoch:[{0}/{1}][training stage]'.format(epoch, self.nb_epochs))
+            print('==> Epoch:[{0}/{1}][training stage]'.format(self.epoch, self.nb_epochs))
             self.train_1epoch()
-            print('==> Epoch:[{0}/{1}][validation stage]'.format(epoch, self.nb_epochs))
+            print('==> Epoch:[{0}/{1}][validation stage]'.format(self.epoch, self.nb_epochs))
             prec1, val_loss = self.validate_1epoch()
 
             is_best = top1 > self.best_prec1
@@ -128,7 +128,7 @@ class Spatial_CNN():
         self.model.train()    
         end = time.time()
         # mini-batch training
-        progress = tqdm.tqdm(self.train_loader)
+        progress = tqdm(self.train_loader)
         for i, (data,label) in enumerate(progress):
     
             # measure data loading time
@@ -178,7 +178,7 @@ class Spatial_CNN():
 
         end = time.time()
 
-        progress = tqdm.tqdm(self.test_loader)
+        progress = tqdm(self.test_loader)
         for i, (data,label) in enumerate(progress):
             
             label = label.cuda(async=True)
@@ -216,15 +216,15 @@ class Data_Loader():
 
         self.BATCH_SIZE=BATCH_SIZE
         self.num_workers = num_workers
-        self.data_dir=data_dir
+        self.data_path=data_path
 
         #load data dictionary
         with open(dic_path+'/sub_jhmdb_train_video.pickle','rb') as f:
-            dic_train=pickle.load(f)
+            dic_training=pickle.load(f)
         f.close()
 
         with open(dic_path+'/sub_jhmdb_test_video.pickle','rb') as f:
-            dic_test=pickle.load(f)
+            dic_testing=pickle.load(f)
         f.close()
 
         self.training_set = JHMDB_rgb_data(dic=dic_training, root_dir=self.data_path, transform = transforms.Compose([
@@ -233,7 +233,7 @@ class Data_Loader():
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
                 ]))
-        self.validation_set = UCF101_rgb_data(dic=dic_testing, root_dir=self.data_path ,transform = transforms.Compose([
+        self.validation_set = JHMDB_rgb_data(dic=dic_testing, root_dir=self.data_path ,transform = transforms.Compose([
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
@@ -249,8 +249,10 @@ class Data_Loader():
 
     def validate(self):
         test_loader = DataLoader(
-            dataset=self.testing_set, 
+            dataset=self.validation_set, 
             batch_size=self.BATCH_SIZE, 
             shuffle=False,
             num_workers=self.num_workers)
         return test_loader
+if __name__=='__main__':
+    main()
