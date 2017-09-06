@@ -35,25 +35,43 @@ def main():
     args = parser.parse_args()
 
     #Prepare DataLoader
-    data_loader = Loader(BATCH_SIZE=arg.batch_size,
+    data_loader = Data_Loader(
+                        BATCH_SIZE=arg.batch_size,
                         num_workers=4,
                         data_path=,
                         dic_path=, 
                         )
     
     train_loader = data_loader.train()
+    test_loader = data_loader.test()
+
+    spatial_cnn = Spatial_CNN(
+                        nb_epochs=arg.epochs
+                        lr=arg.lr
+                        batch_size=arg.batch_size
+                        resume=arg.resume
+                        start_epoch=arg.start_epoch
+                        evaluate=arg.evaluate
+                        train_loader=train_loader
+                        test_loader=test_loader
+    )
+
+    spatial_cnn.build_model_and_optimizer()
+    spatial_cnn.run()
 
 
 
 
-class spatial_cnn():
 
-    def __init__(self, model, EPOCH, LR, BATCH_SIZE, resume, evaluate, train_loader, test_loader):
+class Spatial_CNN():
 
-        self.EPOCH=EPOCH
-        self.LR=LR
-        self.BATCH_SIZE=BATCH_SIZE
+    def __init__(self, nb_epochs, lr, batch_size, resume, start_epoch, evaluate, train_loader, test_loader):
+
+        self.nb_epochs=nb_epochs
+        self.lr=lr
+        self.batch_size=batch_size
         self.resume=resume
+        self.start_epoch=start_epoch
         self.evaluate=evaluate
         self.train_loader=train_loader
         self.test_loader=test_loader
@@ -63,6 +81,40 @@ class spatial_cnn():
         #Loss function and optimizer
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.optimizer = torch.optim.SGD(self.model.parameters(), self.LR, momentum=0.9, weight_decay=1e-6)
+    
+    def run(self):
+        self.best_prec1=0
+        cudnn.benchmark = True
+
+        if self.resume:
+            if os.path.isfile(args.resume):
+                print("==> loading checkpoint '{}'".format(args.resume))
+                checkpoint = torch.load(self.resume)
+                self.start_epoch = checkpoint['epoch']
+                self.best_prec1 = checkpoint['best_prec1']
+                self.model.load_state_dict(checkpoint['state_dict'])
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+                print("==> loaded checkpoint '{}' (epoch {})"
+                  .format(self.resume, checkpoint['epoch']))
+            else:
+                print("==> no checkpoint found at '{}'".format(self.resume))
+        if self.evaluate:
+            prec1, val_loss = self.validate_1epoch()
+
+        for self.epoch in range(self.start_epoch, self.nb_epochs):
+            print('==> Epoch:[{0}/{1}][training stage]'.format(epoch, self.nb_epochs))
+            self.train_1epoch()
+            print('==> Epoch:[{0}/{1}][validation stage]'.format(epoch, self.nb_epochs))
+            prec1, val_loss = self.validate_1epoch()
+
+            is_best = top1 > self.best_prec1
+            self.best_prec1 = max(prec1, self.best_prec1)
+            save_checkpoint({
+                'epoch': epoch,
+                'state_dict': self.model.state_dict(),
+                'best_prec1': self.best_prec1,
+                'optimizer' : self.optimizer.state_dict()
+            },is_best)
 
     def train_1epoch(self):
 
@@ -104,21 +156,15 @@ class spatial_cnn():
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
-
-        record_info = {}
         
-        info = ('Epoch: [{0}][{1}/{2}]\t'
-                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                      'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                      'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                      'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                       epoch, i, len(train_loader), batch_time=batch_time,
-                       data_time=data_time, loss=losses, top1=top1, top5=top5))
-            
-        print info
+        info = {'Epoch':[self.epoch],
+                'Batch Time':[round(batch_time.avg,3)],
+                'Data Time':[round(data_time.avg,3)],
+                'Loss':[losses.avg],
+                'Prec@1':[top1.avg],
+                'Prec@5':[top5.avg]}
 
-        return
+        record_info(info, 'record/training.csv')
 
     def validate_1epoch(self):
 
@@ -153,9 +199,19 @@ class spatial_cnn():
             batch_time.update(time.time() - end)
             end = time.time()
 
+        info = {'Epoch':[self.epoch],
+                'Batch Time':[round(batch_time.avg,3)],
+                'Data Time':[round(data_time.avg,3)],
+                'Loss':[losses.avg],
+                'Prec@1':[top1.avg],
+                'Prec@5':[top5.avg]}
+
+        record_info(info, 'record/testing.csv')
+
+        return prec1, losses.avg
 
 
-class Loader():
+class Data_Loader():
     def __init__(self, BATCH_SIZE, num_workers, data_path, dic_path):
 
         self.BATCH_SIZE=BATCH_SIZE
@@ -182,7 +238,7 @@ class Loader():
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
                 ]))
-                
+
     def train(self):
         train_loader = DataLoader(
             dataset=self.training_set, 
