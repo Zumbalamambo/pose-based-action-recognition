@@ -49,12 +49,12 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-def save_checkpoint(state, is_best, filename='../save/checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='record/checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, '../save/model_best.pth.tar')
+        shutil.copyfile(filename, 'record/model_best.pth.tar')
 
-class JHMDB_rgb_data(Dataset):  
+class JHMDB_training_set(Dataset):  
     def __init__(self, dic, root_dir, transform=None):
 
         self.root_dir = root_dir
@@ -67,8 +67,8 @@ class JHMDB_rgb_data(Dataset):
 
     def __getitem__(self, idx):
         #img_name = os.path.join(self.root_dir, self.landmarks_frame.ix[idx, 0])
-        frame = self.keys[idx] 
-        img = Image.open(self.root_dir + frame)
+        key = self.keys[idx] 
+        img = Image.open(self.root_dir + key)
         label = self.values[idx]
         label = int(label)-1
 
@@ -77,3 +77,62 @@ class JHMDB_rgb_data(Dataset):
                  
         img.close()
         return sample
+
+class JHMDB_testing_set(Dataset):  
+    def __init__(self, dic, root_dir, transform=None):
+
+        self.root_dir = root_dir
+        self.transform = transform
+        self.keys= dic.keys()
+        self.values=dic.values()
+
+    def __len__(self):
+        return len(self.keys)
+
+    def __getitem__(self, idx):
+        #img_name = os.path.join(self.root_dir, self.landmarks_frame.ix[idx, 0])
+        key = self.keys[idx] 
+        videoname = key.split('/',1)[0]
+        img = Image.open(self.root_dir + key)
+        label = self.values[idx]
+        label = int(label)-1
+
+        transformed_img = self.transform(img)
+        sample = (videoname, transformed_img,label)
+                 
+        img.close()
+        return sample
+
+
+
+def record_info(info,filename,mode):
+
+    if mode =='train':
+
+        result = ('Epoch:{a}',
+              'Time {batch_time} '
+              'Data {data_time} '
+              'Loss {loss} '
+              'Prec@1 {top1} '
+              'Prec@5 {top5}'.format(a=info['Epoch'], batch_time=info['Batch Time'],
+               data_time=info['Data Time'], loss=info['Loss'], top1=info['Prec@1'], top5=info['Prec@5']))      
+        print result
+
+        df = pd.DataFrame.from_dict(info)
+        column_names = ['Epoch','Batch Time','Data Time','Loss','Prec@1','Prec@5']
+        
+    if mode =='test':
+        result = ('Epoch{0} ',
+              'Time {batch_time} '
+              'Loss {loss} '
+              'Prec@1 {top1} '
+              'Prec@5 {top5} '.format(info['Epoch'], batch_time=info['Batch Time'],
+               loss=info['Loss'], top1=info['Prec@1'], top5=info['Prec@5']))      
+        print result
+        df = pd.DataFrame.from_dict(info)
+        column_names = ['Epoch','Batch Time','Loss','Prec@1','Prec@5']
+    
+    if not os.path.isfile(filename):
+        df.to_csv(filename,index=False,columns=column_names)
+    else: # else it exists so append without writing the header
+        df.to_csv(filename,mode = 'a',header=False,index=False,columns=column_names)  
