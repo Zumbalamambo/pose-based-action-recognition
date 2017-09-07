@@ -20,12 +20,13 @@ from network import *
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-parser = argparse.ArgumentParser(description='PyTorch UCF101 spatial stream video level training')
-parser.add_argument('--epochs', default=500, type=int, metavar='N', help='number of total epochs to run')
-parser.add_argument('--batch-size', default=64, type=int, metavar='N', help='mini-batch size (default: 64)')
-parser.add_argument('--lr', default=1e-3, type=float, metavar='LR', help='initial learning rate')
-parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 
+
+parser = argparse.ArgumentParser(description='PyTorch Sub-JHMDB rgb frame training')
+parser.add_argument('--epochs', default=500, type=int, metavar='N', help='number of total epochs')
+parser.add_argument('--batch-size', default=64, type=int, metavar='N', help='mini-batch size (default: 64)')
+parser.add_argument('--lr', default=1e-6, type=float, metavar='LR', help='initial learning rate')
+parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 
@@ -33,6 +34,7 @@ def main():
 
     global arg
     arg = parser.parse_args()
+    print arg
 
     #Prepare DataLoader
     data_loader = Data_Loader(
@@ -56,7 +58,6 @@ def main():
                         test_loader=test_loader,
     )
 
-    spatial_cnn.build_model_and_optimizer()
     spatial_cnn.run()
 
 
@@ -76,14 +77,16 @@ class Spatial_CNN():
         self.train_loader=train_loader
         self.test_loader=test_loader
 
-    def build_model_and_optimizer(self):
-        self.model = resnet18(pretrained= True)
+        
+    
+    def run(self):
+
+        self.model = resnet18(pretrained= True).cuda()
         #Loss function and optimizer
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.optimizer = torch.optim.SGD(self.model.parameters(), self.lr, momentum=0.9, weight_decay=1e-6)
-    
-    def run(self):
-        self.best_prec1=0
+
+        best_prec1=0
         cudnn.benchmark = True
 
         if self.resume:
@@ -91,7 +94,7 @@ class Spatial_CNN():
                 print("==> loading checkpoint '{}'".format(args.resume))
                 checkpoint = torch.load(self.resume)
                 self.start_epoch = checkpoint['epoch']
-                self.best_prec1 = checkpoint['best_prec1']
+                best_prec1 = checkpoint['best_prec1']
                 self.model.load_state_dict(checkpoint['state_dict'])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
                 print("==> loaded checkpoint '{}' (epoch {})"
@@ -106,16 +109,18 @@ class Spatial_CNN():
             self.train_1epoch()
             print('==> Epoch:[{0}/{1}][validation stage]'.format(self.epoch, self.nb_epochs))
             prec1, val_loss = self.validate_1epoch()
-
-            is_best = top1 > self.best_prec1
-            self.best_prec1 = max(prec1, self.best_prec1)
+            '''
+            is_best = prec1 > best_prec1
+            if is_best:
+                best_prec1 = prec1
+            
             save_checkpoint({
                 'epoch': epoch,
                 'state_dict': self.model.state_dict(),
-                'best_prec1': self.best_prec1,
+                'best_prec1': best_prec1,
                 'optimizer' : self.optimizer.state_dict()
             },is_best)
-
+            '''
     def train_1epoch(self):
 
         batch_time = AverageMeter()
@@ -160,11 +165,11 @@ class Spatial_CNN():
         info = {'Epoch':[self.epoch],
                 'Batch Time':[round(batch_time.avg,3)],
                 'Data Time':[round(data_time.avg,3)],
-                'Loss':[losses.avg],
-                'Prec@1':[top1.avg],
-                'Prec@5':[top5.avg]}
+                'Loss':[round(losses.avg,5)],
+                'Prec@1':[round(top1.avg,4)],
+                'Prec@5':[round(top5.avg,4)]}
 
-        record_info(info, 'record/training.csv')
+        record_info(info, 'record/training.csv','train')
 
     def validate_1epoch(self):
 
@@ -175,11 +180,12 @@ class Spatial_CNN():
 
         # switch to evaluate mode
         self.model.eval()
+        dic_video_level_preds={}
 
         end = time.time()
 
         progress = tqdm(self.test_loader)
-        for i, (data,label) in enumerate(progress):
+        for i, (keys,data,label) in enumerate(progress):
             
             label = label.cuda(async=True)
             data_var = Variable(data, volatile=True).cuda(async=True)
@@ -190,26 +196,38 @@ class Spatial_CNN():
             loss = self.criterion(output, label_var)
 
             # measure accuracy and record loss
-            prec1, prec5 = accuracy(output.data, label, topk=(1, 5))
+            #prec1, prec5 = accuracy(output.data, label, topk=(1, 5))
             losses.update(loss.data[0], data.size(0))
-            top1.update(prec1[0], data.size(0))
-            top5.update(prec5[0], data.size(0))
+            #top1.update(prec1[0], data.size(0))
+            #top5.update(prec5[0], data.size(0))
 
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
 
+            #Calculate video level prediction
+            preds = output.data.cpu().numpy()
+            nb_data = preds.shape[0]
+
+            for j in range(nb_data):
+                videoName = keys[j].split('/',1)[0]
+                if videoName not in dic_video_level_preds.keys():
+                    dic_video_level_preds[videoName] = preds[j,:]
+                else:
+                    dic_video_level_preds[videoName] += preds[j,:]
+
+        video_top1, video_top5 = frame2_video_level_accuracy(dic_video_level_preds)
+
+
         info = {'Epoch':[self.epoch],
                 'Batch Time':[round(batch_time.avg,3)],
-                'Data Time':[round(data_time.avg,3)],
-                'Loss':[losses.avg],
-                'Prec@1':[top1.avg],
-                'Prec@5':[top5.avg]}
+                'Loss':[round(losses.avg,5)],
+                'Prec@1':[round(video_top1,3)],
+                'Prec@5':[round(video_top5,3)]}
 
-        record_info(info, 'record/testing.csv')
+        record_info(info, 'record/testing.csv','test')
 
-        return prec1, losses.avg
-
+        return video_top1, losses.avg
 
 class Data_Loader():
     def __init__(self, BATCH_SIZE, num_workers, data_path, dic_path):
@@ -219,21 +237,21 @@ class Data_Loader():
         self.data_path=data_path
 
         #load data dictionary
-        with open(dic_path+'/sub_jhmdb_train_video.pickle','rb') as f:
+        with open(dic_path+'/dic_train.pickle','rb') as f:
             dic_training=pickle.load(f)
         f.close()
 
-        with open(dic_path+'/sub_jhmdb_test_video.pickle','rb') as f:
+        with open(dic_path+'/dic_test.pickle','rb') as f:
             dic_testing=pickle.load(f)
         f.close()
 
-        self.training_set = JHMDB_rgb_data(dic=dic_training, root_dir=self.data_path, transform = transforms.Compose([
+        self.training_set = JHMDB_training_set(dic=dic_training, root_dir=self.data_path, transform = transforms.Compose([
                 transforms.RandomCrop(224),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
                 ]))
-        self.validation_set = JHMDB_rgb_data(dic=dic_testing, root_dir=self.data_path ,transform = transforms.Compose([
+        self.validation_set = JHMDB_testing_set(dic=dic_testing, root_dir=self.data_path ,transform = transforms.Compose([
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
@@ -254,5 +272,43 @@ class Data_Loader():
             shuffle=False,
             num_workers=self.num_workers)
         return test_loader
+
+
+
+def frame2_video_level_accuracy(dic_video_level_preds):
+
+    with open('/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/sub_jhmdb_test_video.pickle','rb') as f:
+        dic_video_label = pickle.load(f)
+    f.close()
+        
+    correct = 0
+    video_level_preds = np.zeros((len(dic_video_level_preds),12))
+    video_level_labels = np.zeros(len(dic_video_level_preds))
+    ii=0
+    for name in sorted(dic_video_level_preds.keys()):
+
+
+        preds = dic_video_level_preds[name]
+        label = int(dic_video_label[name])-1
+            
+        video_level_preds[ii,:] = preds
+        video_level_labels[ii] = label
+        ii+=1 
+            
+        if np.argmax(preds) == (label):
+            correct+=1
+
+    #top1 top5
+    video_level_labels = torch.from_numpy(video_level_labels).long()
+    video_level_preds = torch.from_numpy(video_level_preds).float()
+        
+    top1,top5 = accuracy(video_level_preds, video_level_labels, topk=(1,5))     
+                        
+    top1 = float(top1.numpy())
+    top5 = float(top5.numpy())
+        
+    #print(' * Video level Prec@1 {top1:.3f}, Video level Prec@5 {top5:.3f}'.format(top1=top1, top5=top5))
+    return top1,top5
+
 if __name__=='__main__':
     main()
