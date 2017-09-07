@@ -77,3 +77,20 @@ class JHMDB_rgb_data(Dataset):
                  
         img.close()
         return sample
+
+def record_info(info,filename):
+
+    result = ('Epoch: [{0}],Training[{1}/{2}]\t'
+              'Time ({batch_time.avg:.3f})\t'
+              'Data ({data_time.avg:.3f})\t'
+              'Loss ({loss.avg:.4f})\t'
+              'Prec@1 ({top1.avg:.3f})\t'
+              'Prec@5 ({top5.avg:.3f})'.format(info['Epoch'], batch_time=info['Batch Time'],
+               data_time=info['Data Time'], loss=info['Loss'], top1=info['Prec@1'], top5=info['Prec@5']))      
+    print result
+
+    df = pd.DataFrame.from_dict(info)
+    if not os.path.isfile(filename):
+        df.to_csv(filename,index=False,columns=column_names)
+    else: # else it exists so append without writing the header
+        df.to_csv(filename,mode = 'a',header=False,index=False,columns=column_names) 
