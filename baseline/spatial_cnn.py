@@ -67,7 +67,6 @@ def main():
 class Spatial_CNN():
 
     def __init__(self, nb_epochs, lr, batch_size, resume, start_epoch, evaluate, train_loader, test_loader):
-
         self.nb_epochs=nb_epochs
         self.lr=lr
         self.batch_size=batch_size
@@ -78,17 +77,13 @@ class Spatial_CNN():
         self.test_loader=test_loader
         self.best_prec1=0
 
-        
-    
     def run(self):
-
         self.model = resnet18(pretrained= True).cuda()
         #Loss function and optimizer
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.optimizer = torch.optim.SGD(self.model.parameters(), self.lr, momentum=0.9, weight_decay=1e-6)
 
         cudnn.benchmark = True
-
         if self.resume:
             if os.path.isfile(args.resume):
                 print("==> loading checkpoint '{}'".format(args.resume))
@@ -122,13 +117,11 @@ class Spatial_CNN():
             },is_best)
             
     def train_1epoch(self):
-
         batch_time = AverageMeter()
         data_time = AverageMeter()
         losses = AverageMeter()
         top1 = AverageMeter()
         top5 = AverageMeter()
-
         #switch to train mode
         self.model.train()    
         end = time.time()
@@ -168,22 +161,17 @@ class Spatial_CNN():
                 'Loss':[round(losses.avg,5)],
                 'Prec@1':[round(top1.avg,4)],
                 'Prec@5':[round(top5.avg,4)]}
-
         record_info(info, 'record/training.csv','train')
 
     def validate_1epoch(self):
-
         batch_time = AverageMeter()
         losses = AverageMeter()
         top1 = AverageMeter()
         top5 = AverageMeter()
-
         # switch to evaluate mode
         self.model.eval()
         dic_video_level_preds={}
-
         end = time.time()
-
         progress = tqdm(self.test_loader)
         for i, (keys,data,label) in enumerate(progress):
             
@@ -200,15 +188,12 @@ class Spatial_CNN():
             losses.update(loss.data[0], data.size(0))
             #top1.update(prec1[0], data.size(0))
             #top5.update(prec5[0], data.size(0))
-
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
-
             #Calculate video level prediction
             preds = output.data.cpu().numpy()
             nb_data = preds.shape[0]
-
             for j in range(nb_data):
                 videoName = keys[j].split('/',1)[0]
                 if videoName not in dic_video_level_preds.keys():
@@ -217,16 +202,12 @@ class Spatial_CNN():
                     dic_video_level_preds[videoName] += preds[j,:]
 
         video_top1, video_top5 = frame2_video_level_accuracy(dic_video_level_preds)
-
-
         info = {'Epoch':[self.epoch],
                 'Batch Time':[round(batch_time.avg,3)],
                 'Loss':[round(losses.avg,5)],
                 'Prec@1':[round(video_top1,3)],
                 'Prec@5':[round(video_top5,3)]}
-
         record_info(info, 'record/testing.csv','test')
-
         return video_top1, losses.avg
 
 class Data_Loader():
@@ -235,7 +216,6 @@ class Data_Loader():
         self.BATCH_SIZE=BATCH_SIZE
         self.num_workers = num_workers
         self.data_path=data_path
-
         #load data dictionary
         with open(dic_path+'/dic_train.pickle','rb') as f:
             dic_training=pickle.load(f)
@@ -276,7 +256,6 @@ class Data_Loader():
 
 
 def frame2_video_level_accuracy(dic_video_level_preds):
-
     with open('/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/sub_jhmdb_test_video.pickle','rb') as f:
         dic_video_label = pickle.load(f)
     f.close()
@@ -286,15 +265,12 @@ def frame2_video_level_accuracy(dic_video_level_preds):
     video_level_labels = np.zeros(len(dic_video_level_preds))
     ii=0
     for name in sorted(dic_video_level_preds.keys()):
-
-
         preds = dic_video_level_preds[name]
         label = int(dic_video_label[name])-1
             
         video_level_preds[ii,:] = preds
         video_level_labels[ii] = label
-        ii+=1 
-            
+        ii+=1         
         if np.argmax(preds) == (label):
             correct+=1
 
