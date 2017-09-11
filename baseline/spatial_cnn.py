@@ -176,11 +176,9 @@ class Spatial_CNN():
             output = self.model(data_var)
             loss = self.criterion(output, label_var)
 
-            # measure accuracy and record loss
-            #prec1, prec5 = accuracy(output.data, label, topk=(1, 5))
+            # measure loss
             losses.update(loss.data[0], data.size(0))
-            #top1.update(prec1[0], data.size(0))
-            #top5.update(prec5[0], data.size(0))
+
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
