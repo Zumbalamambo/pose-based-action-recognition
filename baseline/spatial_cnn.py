@@ -76,6 +76,7 @@ class Spatial_CNN():
         self.evaluate=evaluate
         self.train_loader=train_loader
         self.test_loader=test_loader
+        self.best_prec1=0
 
         
     
@@ -86,7 +87,6 @@ class Spatial_CNN():
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.optimizer = torch.optim.SGD(self.model.parameters(), self.lr, momentum=0.9, weight_decay=1e-6)
 
-        best_prec1=0
         cudnn.benchmark = True
 
         if self.resume:
@@ -94,7 +94,7 @@ class Spatial_CNN():
                 print("==> loading checkpoint '{}'".format(args.resume))
                 checkpoint = torch.load(self.resume)
                 self.start_epoch = checkpoint['epoch']
-                best_prec1 = checkpoint['best_prec1']
+                self.best_prec1 = checkpoint['best_prec1']
                 self.model.load_state_dict(checkpoint['state_dict'])
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
                 print("==> loaded checkpoint '{}' (epoch {})"
@@ -109,18 +109,18 @@ class Spatial_CNN():
             self.train_1epoch()
             print('==> Epoch:[{0}/{1}][validation stage]'.format(self.epoch, self.nb_epochs))
             prec1, val_loss = self.validate_1epoch()
-            '''
-            is_best = prec1 > best_prec1
+            
+            is_best = prec1 > self.best_prec1
             if is_best:
-                best_prec1 = prec1
+                self.best_prec1 = prec1
             
             save_checkpoint({
-                'epoch': epoch,
+                'epoch': self.epoch,
                 'state_dict': self.model.state_dict(),
-                'best_prec1': best_prec1,
+                'best_prec1': self.best_prec1,
                 'optimizer' : self.optimizer.state_dict()
             },is_best)
-            '''
+            
     def train_1epoch(self):
 
         batch_time = AverageMeter()
