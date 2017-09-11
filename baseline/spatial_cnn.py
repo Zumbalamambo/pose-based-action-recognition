@@ -20,8 +20,6 @@ from network import *
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-
-
 parser = argparse.ArgumentParser(description='PyTorch Sub-JHMDB rgb frame training')
 parser.add_argument('--epochs', default=500, type=int, metavar='N', help='number of total epochs')
 parser.add_argument('--batch-size', default=64, type=int, metavar='N', help='mini-batch size (default: 64)')
@@ -31,7 +29,6 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 
 def main():
-
     global arg
     arg = parser.parse_args()
     print arg
@@ -46,7 +43,7 @@ def main():
     
     train_loader = data_loader.train()
     test_loader = data_loader.validate()
-
+    #Model 
     spatial_cnn = Spatial_CNN(
                         nb_epochs=arg.epochs,
                         lr=arg.lr,
@@ -57,12 +54,8 @@ def main():
                         train_loader=train_loader,
                         test_loader=test_loader,
     )
-
+    #Training
     spatial_cnn.run()
-
-
-
-
 
 class Spatial_CNN():
 
