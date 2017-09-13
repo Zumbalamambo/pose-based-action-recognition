@@ -36,7 +36,7 @@ def main():
     #Prepare DataLoader
     data_loader = Data_Loader(
                         BATCH_SIZE=arg.batch_size,
-                        num_workers=4,
+                        num_workers=8,
                         data_path='/home/ubuntu/data/JHMDB/pose_estimation/pose_estimation/',
                         dic_path='/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/',
                         )
@@ -199,7 +199,7 @@ class Spatial_CNN():
             preds = output.data.cpu().numpy()
             nb_data = preds.shape[0]
             for j in range(nb_data):
-                videoName = keys[j].split('/',1)[0]
+                videoName = keys[j].split('/')[1]
                 if videoName not in self.dic_video_level_preds.keys():
                     self.dic_video_level_preds[videoName] = preds[j,:]
                 else:
@@ -267,6 +267,7 @@ class Data_Loader():
                 #transforms.RandomHorizontalFlip(),
                 #transforms.ToTensor(),
                 ]))
+        print '==> Training data :',len(training_set)
         train_loader = DataLoader(
             dataset=training_set, 
             batch_size=self.BATCH_SIZE,
@@ -279,6 +280,7 @@ class Data_Loader():
                 transforms.CenterCrop(224),
                 #transforms.ToTensor(),
                 ]))
+        print '==> Validation data :',len(validation_set)
         test_loader = DataLoader(
             dataset=validation_set, 
             batch_size=self.BATCH_SIZE, 

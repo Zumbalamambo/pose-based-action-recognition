@@ -125,12 +125,12 @@ def record_info(info,filename,mode):
 
     if mode =='train':
 
-        result = ('Epoch:{a}',
+        result = (
               'Time {batch_time} '
               'Data {data_time} '
               'Loss {loss} '
               'Prec@1 {top1} '
-              'Prec@5 {top5}'.format(a=info['Epoch'], batch_time=info['Batch Time'],
+              'Prec@5 {top5}'.format(batch_time=info['Batch Time'],
                data_time=info['Data Time'], loss=info['Loss'], top1=info['Prec@1'], top5=info['Prec@5']))      
         print result
 
@@ -138,11 +138,11 @@ def record_info(info,filename,mode):
         column_names = ['Epoch','Batch Time','Data Time','Loss','Prec@1','Prec@5']
         
     if mode =='test':
-        result = ('Epoch{0} ',
+        result = (
               'Time {batch_time} '
               'Loss {loss} '
               'Prec@1 {top1} '
-              'Prec@5 {top5} '.format(info['Epoch'], batch_time=info['Batch Time'],
+              'Prec@5 {top5} '.format( batch_time=info['Batch Time'],
                loss=info['Loss'], top1=info['Prec@1'], top5=info['Prec@5']))      
         print result
         df = pd.DataFrame.from_dict(info)
