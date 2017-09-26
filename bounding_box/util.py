@@ -7,6 +7,7 @@ import pandas as pd
 import shutil
 from random import randint
 import numpy as np
+from numpy import unravel_index
 
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
@@ -18,8 +19,9 @@ from torch.autograd import Variable
 from torch.optim import Optimizer
 
 # Dataset
-class JHMDB_Pose_heatmap_data_set(Dataset):  
-    def __init__(self, dic, nb_per_stack, root_dir, transform=None):
+# Dataset
+class JHMDB_Pose_dataset(Dataset):  
+    def __init__(self, dic, nb_per_stack, mode, root_dir, transform=None):
         #print('==> get total frame numbers of each video')
         frame_count={}
         for key in dic:
@@ -41,7 +43,8 @@ class JHMDB_Pose_heatmap_data_set(Dataset):
         self.transform = transform
         self.nb_per_stack=nb_per_stack
         self.keys = dic_stack.keys()
-        self.values =dic_stack.values() 
+        self.values =dic_stack.values()
+        self.mode = mode 
 
     def __len__(self):
         return len(self.keys)
@@ -49,7 +52,7 @@ class JHMDB_Pose_heatmap_data_set(Dataset):
     def __getitem__(self, idx):
 
         key = self.keys[idx]
-        out = stack_joint_position(key,self.nb_per_stack, self.root_dir, self.transform)
+        out = stack_joint_position(key, self.nb_per_stack, self.root_dir, self.transform, self.mode)
 
         label = self.values[idx]
         label = int(label)-1
@@ -57,22 +60,69 @@ class JHMDB_Pose_heatmap_data_set(Dataset):
         sample = (key, data, label)
         return sample
 
-def stack_joint_position(key, nb_per_stack, root_dir, transform):
+def stack_joint_position(key, nb_per_stack, root_dir, transform, mode):
     out=np.zeros((nb_per_stack,224,224))
     classname,videoname,frame = key.split('/')
     index=int(frame.split('.',1)[0])
+    # random crop
+    random_cropping=Random_Crop()
+    random_cropping.get_crop_size()
     for i in range(nb_per_stack):
         n = classname+'/'+videoname+'/'+ str(index+i).zfill(5)+'.mat'
         mat = scipy.io.loadmat(root_dir + n)['final_score']
-        out[i,:,:] = transform(Image.fromarray(mat.sum(axis=2,dtype='uint8')))
-    
+        x0,y0,x1,y1,l=detect_bounding_box(mat)
+        if mode =='train':
+            img = crop_and_resize(Image.fromarray(mat.sum(axis=2,dtype='uint8')),x0-5,y0-5,x0+l+5,y0+l+5) # 256*256
+            out[i,:,:] = random_cropping.crop_and_resize(img=img) # 224*224
+        if mode =='val':
+            img = crop_and_resize(Image.fromarray(mat.sum(axis=2,dtype='uint8')),x0-5,y0-5,x0+l+5,y0+l+5) # 256*256
+            out[i,:,:] = img.resize([224,224])
     return out
 
 
+from numpy import unravel_index
+def detect_bounding_box(mat):
+    h,w,c = np.shape(mat)
+    x0,x1=w,0
+    y0,y1=h,0
+    for i in range(c):
+        a = mat[:,:,i]
+        x,y = unravel_index(a.argmax(), a.shape)
+        #print x,y
+        if x > x1:
+            x1=x
+        if x < x0:
+            x0=x
+        if y > y1:
+            y1=y
+        if y < y0:
+            y0=y
+    if (x1-x0)>(y1-y0):
+        l=x1-x0
+    else:
+        l=y1-y0
 
-        
+    return x0,y0,x1,y1,l
 
+def crop_and_resize(img,x0,y0,x1,y1):
+    crop = img.crop([y0,x0,y1,x1])
+    resize = crop.resize([256,256])
 
+    return resize
+
+class Random_Crop():
+    def get_crop_size(self):
+        H = [256,224,192,168]
+        W = [256,224,192,168]
+        id1 = randint(0,len(H)-1)
+        id2 = randint(0,len(W)-1)
+        self.h_crop = H[id1]
+        self.w_crop = W[id2]
+
+    def crop_and_resize(self,img):
+        crop = img.crop([0,0,self.h_crop,self.w_crop])
+        resize = crop.resize([224,224])
+        return resize
 
 
 # other util
@@ -128,10 +178,10 @@ def record_info(info,filename,mode):
 
         result = (
               'Time {batch_time} '
-              'Data {data_time} \n'
+              'Data {data_time} '
               'Loss {loss} '
               'Prec@1 {top1} '
-              'Prec@5 {top5}\n '.format(batch_time=info['Batch Time'],
+              'Prec@5 {top5}'.format(batch_time=info['Batch Time'],
                data_time=info['Data Time'], loss=info['Loss'], top1=info['Prec@1'], top5=info['Prec@5']))      
         print result
 
@@ -140,10 +190,10 @@ def record_info(info,filename,mode):
         
     if mode =='test':
         result = (
-              'Time {batch_time} \n'
+              'Time {batch_time} '
               'Loss {loss} '
               'Prec@1 {top1} '
-              'Prec@5 {top5} \n'.format( batch_time=info['Batch Time'],
+              'Prec@5 {top5} '.format( batch_time=info['Batch Time'],
                loss=info['Loss'], top1=info['Prec@1'], top5=info['Prec@5']))      
         print result
         df = pd.DataFrame.from_dict(info)
@@ -169,18 +219,15 @@ if __name__ == '__main__':
         dic_testing=pickle.load(f)
     f.close()
 
-    training_set = JHMDB_Pose_heatmap_data_set(dic=dic_training, root_dir=data_path, nb_per_stack=10, transform = transforms.Compose([
+    training_set = JHMDB_Pose_heatmap_data_set(dic=dic_training, root_dir=data_path, transform = transforms.Compose([
             transforms.RandomCrop(224),
             #transforms.RandomHorizontalFlip(),
             #transforms.ToTensor(),
             ]))
     
-    validation_set = JHMDB_Pose_heatmap_data_set(dic=dic_testing, root_dir=data_path, nb_per_stack=10,transform = transforms.Compose([
+    validation_set = JHMDB_Pose_heatmap_data_set(dic=dic_testing, root_dir=data_path ,transform = transforms.Compose([
             transforms.CenterCrop(224),
             #transforms.ToTensor(),
             ]))
-    print type(training_set[1][1][1,:,:].numpy())
-    a = (training_set[1][1][1,:,:].numpy())
-    with open('test.pickle','wb') as f:
-        pickle.dump(a,f)
-    f.close()
+    
+    print training_set[1], validation_set[1]
