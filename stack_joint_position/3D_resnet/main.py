@@ -2,7 +2,7 @@ import numpy as np
 import pickle
 from PIL import Image
 import time
-import tqdm
+from tqdm import tqdm
 import shutil
 from random import randint
 import argparse
@@ -18,17 +18,17 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from util import *
 from network import *
+from dataloader import *
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
-parser = argparse.ArgumentParser(description='PyTorch Sub-JHMDB rgb frame training')
+parser = argparse.ArgumentParser(description='PyTorch ResNet3D on Sub-JHMDB')
 parser.add_argument('--epochs', default=500, type=int, metavar='N', help='number of total epochs')
-parser.add_argument('--batch-size', default=32, type=int, metavar='N', help='mini-batch size (default: 64)')
-parser.add_argument('--lr', default=1e-4, type=float, metavar='LR', help='initial learning rate')
+parser.add_argument('--batch-size', default=16, type=int, metavar='N', help='mini-batch size (default: 64)')
+parser.add_argument('--lr', default=1e-2, type=float, metavar='LR', help='initial learning rate')
 parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
-parser.add_argument('--nb_per_stack', default=5, type=int, metavar='N',help='number of joint positions in 1 stack (default: 5)')
 
 def main():
     global arg
@@ -36,35 +36,31 @@ def main():
     print arg
 
     #Prepare DataLoader
-    data_loader = Data_Loader(
+    data_loader =ResNet3D_DataLoader(
                         BATCH_SIZE=arg.batch_size,
                         num_workers=8,
-                        data_path='/home/ubuntu/data/JHMDB/pose_estimation/pose_estimation/',
+                        nb_per_stack=15,
                         dic_path='/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/',
-                        nb_per_stack=arg.nb_per_stack,
+                                        data_path='/home/ubuntu/data/JHMDB/pose_estimation/pose_estimation/' 
                         )
     
-    train_loader = data_loader.train()
-    test_loader = data_loader.validate()
+    train_loader, val_loader = data_loader.run()
     #Model 
-    spatial_cnn = Spatial_CNN(
-                        # Data Loader
-                        train_loader=train_loader,
-                        test_loader=test_loader,
-                        # Utility
-                        start_epoch=arg.start_epoch,
-                        resume=arg.resume,
-                        evaluate=arg.evaluate,
-                        # Hyper-parameter
+    model = ResNet3D(
                         nb_epochs=arg.epochs,
                         lr=arg.lr,
                         batch_size=arg.batch_size,
-                        channel = arg.nb_per_stack,)
+                        resume=arg.resume,
+                        start_epoch=arg.start_epoch,
+                        evaluate=arg.evaluate,
+                        train_loader=train_loader,
+                        val_loader=val_loader)
     #Training
-    spatial_cnn.run()
+    model.run()
 
-class Spatial_CNN():
-    def __init__(self, nb_epochs, lr, batch_size, resume, start_epoch, evaluate, train_loader, test_loader, channel):
+class ResNet3D():
+
+    def __init__(self, nb_epochs, lr, batch_size, resume, start_epoch, evaluate, train_loader, val_loader):
         self.nb_epochs=nb_epochs
         self.lr=lr
         self.batch_size=batch_size
@@ -72,19 +68,18 @@ class Spatial_CNN():
         self.start_epoch=start_epoch
         self.evaluate=evaluate
         self.train_loader=train_loader
-        self.test_loader=test_loader
+        self.val_loader=val_loader
         self.best_prec1=0
-        self.channel=channel
 
     def build_model(self):
         print ('==> Build model and setup loss and optimizer')
         #build model
-        self.model = resnet18(pretrained= True, channel=self.channel).cuda()
+        self.model = resnet18().cuda()
         #print self.model
         #Loss function and optimizer
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.optimizer = torch.optim.SGD(self.model.parameters(), self.lr, momentum=0.9)
-        self.scheduler = ReduceLROnPlateau(self.optimizer,'max',factor=0.5, patience=1,verbose=True)
+        self.scheduler = ReduceLROnPlateau(self.optimizer, 'max', patience=2,verbose=True)
 
     def resume_and_evaluate(self):
         if self.resume:
@@ -105,14 +100,16 @@ class Spatial_CNN():
     def run(self):
         self.build_model()
         self.resume_and_evaluate()
+
         cudnn.benchmark = True
-        
         for self.epoch in range(self.start_epoch, self.nb_epochs):
+            print('==> Epoch:[{0}/{1}][training stage]'.format(self.epoch, self.nb_epochs))
             self.train_1epoch()
+            print('==> Epoch:[{0}/{1}][validation stage]'.format(self.epoch, self.nb_epochs))
             prec1, val_loss = self.validate_1epoch()
             self.scheduler.step(prec1)
+            
             is_best = prec1 > self.best_prec1
-            # save model
             if is_best:
                 self.best_prec1 = prec1
             
@@ -122,10 +119,8 @@ class Spatial_CNN():
                 'best_prec1': self.best_prec1,
                 'optimizer' : self.optimizer.state_dict()
             },is_best)
-
+            
     def train_1epoch(self):
-        print('==> Epoch:[{0}/{1}][training stage]'.format(self.epoch, self.nb_epochs))
-
         batch_time = AverageMeter()
         data_time = AverageMeter()
         losses = AverageMeter()
@@ -135,9 +130,9 @@ class Spatial_CNN():
         self.model.train()    
         end = time.time()
         # mini-batch training
-        progress = tqdm(self.train_loader)
-        for i, (key, data,label) in enumerate(progress):
-            #print data.size()
+        for i, (data,label) in enumerate(tqdm(self.train_loader)):
+
+    
             # measure data loading time
             data_time.update(time.time() - end)
             
@@ -173,8 +168,6 @@ class Spatial_CNN():
         record_info(info, 'record/training.csv','train')
 
     def validate_1epoch(self):
-        print('==> Epoch:[{0}/{1}][validation stage]'.format(self.epoch, self.nb_epochs))
-
         batch_time = AverageMeter()
         losses = AverageMeter()
         top1 = AverageMeter()
@@ -183,8 +176,7 @@ class Spatial_CNN():
         self.model.eval()
         self.dic_video_level_preds={}
         end = time.time()
-        progress = tqdm(self.test_loader)
-        for i, (keys,data,label) in enumerate(progress):
+        for i, (keys,data,label) in enumerate(tqdm(self.val_loader)):
             
             label = label.cuda(async=True)
             data_var = Variable(data, volatile=True).cuda(async=True)
@@ -204,14 +196,14 @@ class Spatial_CNN():
             preds = output.data.cpu().numpy()
             nb_data = preds.shape[0]
             for j in range(nb_data):
-                videoName = keys[j].split('/')[1]
+                videoName = keys[j].split('/',1)[0]
                 if videoName not in self.dic_video_level_preds.keys():
                     self.dic_video_level_preds[videoName] = preds[j,:]
                 else:
                     self.dic_video_level_preds[videoName] += preds[j,:]
-                    
-        #Frame to video level accuracy
+
         video_top1, video_top5 = self.frame2_video_level_accuracy()
+
         info = {'Epoch':[self.epoch],
                 'Batch Time':[round(batch_time.avg,3)],
                 'Loss':[round(losses.avg,5)],
@@ -224,12 +216,15 @@ class Spatial_CNN():
         with open('/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/sub_jhmdb_test_video.pickle','rb') as f:
             dic_video_label = pickle.load(f)
         f.close()
+        print '==> validate on {} videos'.format(len(dic_video_label))
             
         correct = 0
-        video_level_preds = np.zeros((len(self.dic_video_level_preds),12))
+        video_level_preds = np.zeros((len(self.dic_video_level_preds),101))
         video_level_labels = np.zeros(len(self.dic_video_level_preds))
         ii=0
-        for name in sorted(self.dic_video_level_preds.keys()):
+        for key in sorted(self.dic_video_level_preds.keys()):
+            name = key
+
             preds = self.dic_video_level_preds[name]
             label = int(dic_video_label[name])-1
                 
@@ -251,90 +246,6 @@ class Spatial_CNN():
         #print(' * Video level Prec@1 {top1:.3f}, Video level Prec@5 {top5:.3f}'.format(top1=top1, top5=top5))
         return top1,top5
 
-class Data_Loader():
-    def __init__(self, BATCH_SIZE, num_workers, data_path, dic_path, nb_per_stack):
 
-        self.BATCH_SIZE=BATCH_SIZE
-        self.num_workers = num_workers
-        self.data_path=data_path
-        self.nb_per_stack=nb_per_stack
-        #load data dictionary
-        with open(dic_path+'/dic_pose_train.pickle','rb') as f:
-            self.dic_training=pickle.load(f)
-        f.close()
-
-        with open(dic_path+'/dic_pose_test.pickle','rb') as f:
-            self.dic_testing=pickle.load(f)
-        f.close()
-       
-    def train(self):
-        training_set = JHMDB_Pose_dataset(
-                dic=self.dic_training, 
-                nb_per_stack=self.nb_per_stack,
-                mode='train',
-                root_dir=self.data_path,
-                transform = None)
-        print '==> Training data :',len(training_set)
-
-        train_loader = DataLoader(
-            dataset=training_set, 
-            batch_size=self.BATCH_SIZE,
-            shuffle=True,
-            num_workers=self.num_workers)
-        return train_loader
-
-    def validate(self):
-        validation_set = JHMDB_Pose_dataset(
-                dic=self.dic_testing,
-                nb_per_stack=self.nb_per_stack,
-                mode='val',
-                root_dir=self.data_path,
-                transform = None
-                            )
-        print '==> Validation data :',len(validation_set)
-
-        test_loader = DataLoader(
-            dataset=validation_set, 
-            batch_size=self.BATCH_SIZE, 
-            shuffle=False,
-            num_workers=self.num_workers)
-        return test_loader
-
-def frame2_video_level_accuracy(dic_video_level_preds):
-    with open('/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/sub_jhmdb_test_video.pickle','rb') as f:
-        dic_video_label = pickle.load(f)
-    f.close()
-        
-    correct = 0
-    video_level_preds = np.zeros((len(dic_video_level_preds),21))
-    video_level_labels = np.zeros(len(dic_video_level_preds))
-    ii=0
-    for line in sorted(dic_video_level_preds.keys()):
-    
-        n,g = line.split('_',1)
-        if n == 'HandstandPushups':
-            name = 'HandStandPushups_'+g
-        else:
-            name = line
-        preds = dic_video_level_preds[line]
-        label = int(dic_video_label[name])-1
-            
-        video_level_preds[ii,:] = preds
-        video_level_labels[ii] = label
-        ii+=1         
-        if np.argmax(preds) == (label):
-            correct+=1
-
-    #top1 top5
-    video_level_labels = torch.from_numpy(video_level_labels).long()
-    video_level_preds = torch.from_numpy(video_level_preds).float()
-        
-    top1,top5 = accuracy(video_level_preds, video_level_labels, topk=(1,5))     
-                        
-    top1 = float(top1.numpy())
-    top5 = float(top5.numpy())
-        
-    #print(' * Video level Prec@1 {top1:.3f}, Video level Prec@5 {top5:.3f}'.format(top1=top1, top5=top5))
-    return top1,top5
-if __name__=='__main__':
+if __name__ == '__main__':
     main()
