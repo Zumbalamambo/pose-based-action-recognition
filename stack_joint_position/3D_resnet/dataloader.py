@@ -168,7 +168,7 @@ class ResNet3D_DataLoader():
         return val_loader
 
 def stack_joint_position(key, clip_idx, nb_per_stack, root_dir, transform, mode):
-    out=np.zeros((3,nb_per_stack,112,112))
+    out=np.zeros((1,nb_per_stack,112,112))
     classname,videoname = key.split('/')
     index=int(clip_idx)
 
@@ -178,14 +178,12 @@ def stack_joint_position(key, clip_idx, nb_per_stack, root_dir, transform, mode)
         x0,y0,x1,y1,l=detect_bounding_box(mat)
         if mode =='train':
             data = crop_and_resize(Image.fromarray(mat.sum(axis=2,dtype='uint8')),x0-5,y0-5,x0+l+5,y0+l+5) # 256*256
-            for j in range(3):
-                out[j,i,:,:] = data
+            out[:,i,:,:] = data
 
             #out[i,:,:] = random_cropping.crop_and_resize(img=img) # 224*224
         elif mode =='val':
             data = crop_and_resize(Image.fromarray(mat.sum(axis=2,dtype='uint8')),x0-5,y0-5,x0+l+5,y0+l+5) # 256*256
-            for j in range(3):
-                out[j,i,:,:] = data
+            out[:,i,:,:] = data
         else:
             raise ValueError('There are only train and val mode')
             

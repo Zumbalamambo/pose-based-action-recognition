@@ -20,7 +20,7 @@ from util import *
 from network import *
 from dataloader import *
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 parser = argparse.ArgumentParser(description='PyTorch ResNet3D on Sub-JHMDB')
 parser.add_argument('--epochs', default=500, type=int, metavar='N', help='number of total epochs')
@@ -38,7 +38,7 @@ def main():
     #Prepare DataLoader
     data_loader =ResNet3D_DataLoader(
                         BATCH_SIZE=arg.batch_size,
-                        num_workers=8,
+                        num_workers=4,
                         nb_per_stack=15,
                         dic_path='/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/',
                                         data_path='/home/ubuntu/data/JHMDB/pose_estimation/pose_estimation/' 

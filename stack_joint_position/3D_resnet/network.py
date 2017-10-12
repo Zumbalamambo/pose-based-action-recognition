@@ -112,7 +112,7 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, shortcut_type='B', num_classes=101):
         self.inplanes = 64
         super(ResNet, self).__init__()
-        self.conv1 = nn.Conv3d(3, 64, kernel_size=7, stride=(1, 2, 2),
+        self.conv1 = nn.Conv3d(1, 64, kernel_size=7, stride=(1, 2, 2), # change from 3channel to 1channel
                                padding=(3, 3, 3), bias=False)
         self.bn1 = nn.BatchNorm3d(64)
         self.relu = nn.ReLU(inplace=True)
@@ -172,10 +172,17 @@ class ResNet(nn.Module):
 
         return x
 
-def filter2d_to_3d(weight2d, weight3d):
+def filter2d_to_3d(key,weight2d, weight3d):
     nb_filter, channel, h, w, c = weight3d.size()
-    for i in range(c):
-        weight3d[:,:,:,:,i] = weight2d.data/float(c)
+    if key == 'conv1.weight':
+        s=0
+        for i in range(3):
+            s += weight2d.data[:,i,:,:]
+        for ii in range(c):
+            weight3d[:,:,:,:,ii] = s/float(c*3)
+    else:
+        for i in range(c):
+            weight3d[:,:,:,:,i] = weight2d.data/float(c)
     
     return weight3d
 
@@ -188,7 +195,7 @@ def weight_trainsform(pretrain_dict, model_dict):
             #print key,pretrain_dict[key].size()
             weight2d = pretrain_dict[key]
             weight3d = model_dict[key]
-            model_dict[key] = filter2d_to_3d(weight2d, weight3d)
+            model_dict[key] = filter2d_to_3d(key, weight2d, weight3d)
     return model_dict
  
 
