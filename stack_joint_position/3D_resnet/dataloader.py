@@ -164,7 +164,7 @@ def stack_joint_position(key, clip_idx, nb_per_stack, root_dir, transform, mode)
     classname,videoname = key.split('/')
     index=int(clip_idx)
     rc = GroupRandomCrop()
-    rc.get_crop_size()
+    rc.get_params()
     for i in range(nb_per_stack):
         n = classname+'/'+videoname+'/'+ str(index+i).zfill(5)+'.mat'
         mat = scipy.io.loadmat(root_dir + n)['final_score']
@@ -214,7 +214,7 @@ def crop_and_resize(img,x0,y0,x1,y1):
     return resize
 
 class GroupRandomCrop():
-    def get_crop_size(self):
+    def get_params(self):
         '''
         H = [256,224,192,168]
         W = [256,224,192,168]
@@ -229,7 +229,7 @@ class GroupRandomCrop():
         
 
     def crop(self,img):
-        crop = img.crop([self.h0,self.w0,self.h_crop,self.w_crop])
+        crop = img.crop([self.h0,self.w0,self.h0+self.h_crop,self.w0+self.w_crop])
         #resize = crop.resize([224,224])
         return crop    
 
