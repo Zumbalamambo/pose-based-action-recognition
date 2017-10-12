@@ -41,7 +41,7 @@ def main():
                         num_workers=4,
                         nb_per_stack=15,
                         dic_path='/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/',
-                                        data_path='/home/ubuntu/data/JHMDB/pose_estimation/pose_estimation/' 
+                        data_path='/home/ubuntu/data/JHMDB/pose_estimation/pose_estimation/' 
                         )
     
     train_loader, val_loader = data_loader.run()

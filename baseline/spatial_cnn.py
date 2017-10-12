@@ -47,7 +47,7 @@ def main():
     train_loader = data_loader.train()
     test_loader = data_loader.validate()
 
-    spatial_cnn = Spatial_CNN(
+    model = Spatial_CNN(
                         nb_epochs=arg.epochs,
                         lr=arg.lr,
                         batch_size=arg.batch_size,
@@ -58,7 +58,7 @@ def main():
                         test_loader=test_loader,
     )
 
-    spatial_cnn.run()
+    model.run()
 
 
 

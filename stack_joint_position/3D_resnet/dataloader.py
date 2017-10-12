@@ -130,10 +130,6 @@ class ResNet3D_DataLoader():
             nb_per_stack=self.nb_per_stack,
             mode='train',
             transform=None 
-            #transform = transforms.Compose([
-            #transforms.ToTensor(),
-            #transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
-            #])
             )
         print '==> Training data :',len(training_set),' videos'
         #print training_set[1]
@@ -151,10 +147,6 @@ class ResNet3D_DataLoader():
             nb_per_stack=self.nb_per_stack,
             mode ='val',
             transform=None 
-            #transform = transforms.Compose([
-            #transforms.ToTensor(),
-            #transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
-            #])
             )
         print '==> Validation data :',len(validation_set),' clips'
         #print validation_set[1]
@@ -171,12 +163,14 @@ def stack_joint_position(key, clip_idx, nb_per_stack, root_dir, transform, mode)
     out=np.zeros((1,nb_per_stack,112,112))
     classname,videoname = key.split('/')
     index=int(clip_idx)
-
+    rc = GroupRandomCrop()
+    rc.get_params()
     for i in range(nb_per_stack):
         n = classname+'/'+videoname+'/'+ str(index+i).zfill(5)+'.mat'
         mat = scipy.io.loadmat(root_dir + n)['final_score']
         x0,y0,x1,y1,l=detect_bounding_box(mat)
         if mode =='train':
+<<<<<<< HEAD
             data = crop_and_resize(Image.fromarray(mat.sum(axis=2,dtype='uint8')),x0-5,y0-5,x0+l+5,y0+l+5) # 256*256
             out[:,i,:,:] = data
 
@@ -184,6 +178,15 @@ def stack_joint_position(key, clip_idx, nb_per_stack, root_dir, transform, mode)
         elif mode =='val':
             data = crop_and_resize(Image.fromarray(mat.sum(axis=2,dtype='uint8')),x0-5,y0-5,x0+l+5,y0+l+5) # 256*256
             out[:,i,:,:] = data
+=======
+            data = crop_and_resize(Image.fromarray(mat.sum(axis=2,dtype='uint8')),x0-5,y0-5,x0+l+5,y0+l+5)
+            for j in range(3):
+                out[j,i,:,:] = rc.crop(data)
+        elif mode =='val':
+            data = crop_and_resize(Image.fromarray(mat.sum(axis=2,dtype='uint8')),x0-5,y0-5,x0+l+5,y0+l+5) # 256*256
+            for j in range(3):
+                out[j,i,:,:] = data.resize([112,112])
+>>>>>>> bfe2080adea4d65fb29e492100cce12f64f5ee86
         else:
             raise ValueError('There are only train and val mode')
             
@@ -216,9 +219,29 @@ def detect_bounding_box(mat):
 
 def crop_and_resize(img,x0,y0,x1,y1):
     crop = img.crop([y0,x0,y1,x1])
-    resize = crop.resize([112,112])
+    resize = crop.resize([128,128])
 
     return resize
+
+class GroupRandomCrop():
+    def get_params(self):
+        '''
+        H = [256,224,192,168]
+        W = [256,224,192,168]
+        id1 = randint(0,len(H)-1)
+        id2 = randint(0,len(W)-1)
+        '''
+        self.h_crop = 112
+        self.w_crop = 112
+        
+        self.h0 = randint(0,128-self.h_crop)
+        self.w0 = randint(0,128-self.w_crop)
+        
+
+    def crop(self,img):
+        crop = img.crop([self.h0,self.w0,self.h0+self.h_crop,self.w0+self.w_crop])
+        #resize = crop.resize([224,224])
+        return crop    
 
 if __name__ == '__main__':
     data_loader = ResNet3D_DataLoader(BATCH_SIZE=1,num_workers=1,
