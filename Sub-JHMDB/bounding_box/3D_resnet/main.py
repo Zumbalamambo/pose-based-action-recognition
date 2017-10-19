@@ -19,8 +19,9 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from util import *
 from network import *
 from dataloader import *
+from logger import Logger
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 parser = argparse.ArgumentParser(description='PyTorch ResNet3D on Sub-JHMDB')
 parser.add_argument('--epochs', default=500, type=int, metavar='N', help='number of total epochs')
@@ -70,6 +71,8 @@ class ResNet3D():
         self.train_loader=train_loader
         self.val_loader=val_loader
         self.best_prec1=0
+        self.train_logger = Logger('/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/bbox_stack_position/resnet3d//record/logs/train')
+        self.val_logger = Logger('/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/bbox_stack_position/resnet3d//record/logs/val')
 
     def build_model(self):
         print ('==> Build model and setup loss and optimizer')
@@ -101,12 +104,16 @@ class ResNet3D():
         self.build_model()
         self.resume_and_evaluate()
 
+
         cudnn.benchmark = True
         for self.epoch in range(self.start_epoch, self.nb_epochs):
             print('==> Epoch:[{0}/{1}][training stage]'.format(self.epoch, self.nb_epochs))
-            self.train_1epoch()
+            train_info=self.train_1epoch()
+            record_logger(self.train_logger,train_info,self.epoch)
             print('==> Epoch:[{0}/{1}][validation stage]'.format(self.epoch, self.nb_epochs))
-            prec1, val_loss = self.validate_1epoch()
+            prec1, val_loss, val_info = self.validate_1epoch()
+            record_logger(self.val_logger,val_info,self.epoch)
+
             self.scheduler.step(prec1)
             
             is_best = prec1 > self.best_prec1
@@ -158,14 +165,20 @@ class ResNet3D():
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
-        
-        info = {'Epoch':[self.epoch],
-                'Batch Time':[round(batch_time.avg,3)],
-                'Data Time':[round(data_time.avg,3)],
-                'Loss':[round(losses.avg,5)],
-                'Prec@1':[round(top1.avg,4)],
-                'Prec@5':[round(top5.avg,4)]}
-        record_info(info, 'record/training.csv','train')
+    
+        info = {'Epoch':self.epoch,
+                'Batch Time':round(batch_time.avg,3),
+                'Data Time':round(data_time.avg,3),
+                'Loss':round(losses.avg,5),
+                'Prec@1':round(top1.avg,4),
+                'Prec@5':round(top5.avg,4),
+                'lr': self.optimizer.param_groups[0]['lr']
+                }
+        #record_info(info, 'record/training.csv','train')
+        for line in info:
+            print line,info[line]
+
+        return info
 
     def validate_1epoch(self):
         batch_time = AverageMeter()
@@ -202,15 +215,19 @@ class ResNet3D():
                 else:
                     self.dic_video_level_preds[videoName] += preds[j,:]
 
-        video_top1, video_top5 = self.frame2_video_level_accuracy()
+        video_top1, video_top5, video_loss = self.frame2_video_level_accuracy()
+        print type(video_loss)
 
-        info = {'Epoch':[self.epoch],
-                'Batch Time':[round(batch_time.avg,3)],
-                'Loss':[round(losses.avg,5)],
-                'Prec@1':[round(video_top1,3)],
-                'Prec@5':[round(video_top5,3)]}
-        record_info(info, 'record/testing.csv','test')
-        return video_top1, losses.avg
+        info = {'Epoch':self.epoch,
+                'Batch Time':round(batch_time.avg,3),
+                'Loss':round(video_loss,5),
+                'Prec@1':round(video_top1,3),
+                'Prec@5':round(video_top5,3)}
+        #record_info(info, 'record/testing.csv','test')
+        for line in info:
+            print line,info[line]
+
+        return video_top1, video_loss, info
 
     def frame2_video_level_accuracy(self):
         with open('/home/ubuntu/cvlab/pytorch/Sub-JHMDB_pose_stream/get_train_test_split/sub_jhmdb_test_video.pickle','rb') as f:
@@ -237,6 +254,8 @@ class ResNet3D():
         #top1 top5
         video_level_labels = torch.from_numpy(video_level_labels).long()
         video_level_preds = torch.from_numpy(video_level_preds).float()
+
+        loss = self.criterion(Variable(video_level_preds).cuda(), Variable(video_level_labels).cuda())
             
         top1,top5 = accuracy(video_level_preds, video_level_labels, topk=(1,5))     
                             
@@ -244,7 +263,7 @@ class ResNet3D():
         top5 = float(top5.numpy())
             
         #print(' * Video level Prec@1 {top1:.3f}, Video level Prec@5 {top5:.3f}'.format(top1=top1, top5=top5))
-        return top1,top5
+        return top1,top5,loss.data.cpu().numpy()
 
 
 if __name__ == '__main__':

@@ -62,8 +62,9 @@ def record_info(info,filename,mode):
               'Data {data_time} \n'
               'Loss {loss} '
               'Prec@1 {top1} '
-              'Prec@5 {top5}\n'.format(batch_time=info['Batch Time'],
-               data_time=info['Data Time'], loss=info['Loss'], top1=info['Prec@1'], top5=info['Prec@5']))      
+              'Prec@5 {top5}\n'
+              'LR {lr}\n'.format(batch_time=info['Batch Time'],
+               data_time=info['Data Time'], loss=info['Loss'], top1=info['Prec@1'], top5=info['Prec@5'],lr=info['lr']))      
         print result
 
         df = pd.DataFrame.from_dict(info)
@@ -84,3 +85,8 @@ def record_info(info,filename,mode):
         df.to_csv(filename,index=False,columns=column_names)
     else: # else it exists so append without writing the header
         df.to_csv(filename,mode = 'a',header=False,index=False,columns=column_names)
+
+def record_logger(logger,info,epoch):
+
+    for tag, value in info.items():
+            logger.scalar_summary(tag, value, epoch+1)
